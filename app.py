@@ -6,13 +6,14 @@ import os
 import base64
 
 # ==============================================================================
-# 1. CONFIGURACIÓN DE LA PÁGINA Y PANEL DE ESTILOS CSS
+# 1. CONFIGURACIÓN DE LA PÁGINA Y PANEL DE ESTILOS CSS SAAS PREMIUM
 # ==============================================================================
 icono_pestana = "logoBlumare.ico" if os.path.exists("logoBlumare.ico") else "logoBlumare.jpeg"
 st.set_page_config(page_title="Blumare - SGE", page_icon=icono_pestana, layout="wide")
 
 st.markdown("""
     <style>
+    /* Ocultamiento absoluto de componentes nativos de desarrollo de Streamlit */
     [data-testid="stHeader"] { display: none !important; }
     [data-testid="stToolbar"] { display: none !important; }
     .stAppDeployButton { display: none !important; }
@@ -20,6 +21,7 @@ st.markdown("""
     footer { display: none !important; }
     div[class*="viewerBadge"], [data-testid="stAppCreatorBadge"] { display: none !important; }
     
+    /* Paleta Enterprise Slate 900 */
     .stApp { background-color: #0f172a; }
     .stTextInput > div > div > input, .stSelectbox > div > div > div {
         background-color: #1e293b !important;
@@ -28,6 +30,7 @@ st.markdown("""
         color: #f8fafc !important;
     }
     
+    /* Configuración Estricta de Botones Flat */
     div.stButton > button {
         border-radius: 8px !important;
         font-weight: 800 !important;
@@ -35,6 +38,8 @@ st.markdown("""
         transition: transform 0.1s ease !important;
     }
     div.stButton > button:active { transform: scale(0.98) !important; }
+    
+    /* Identificación por colores de acuerdo a su naturaleza corporativa */
     div.stButton > button[kind="primary"] { background-color: #10b981 !important; color: white !important; }
     div.stButton > button[kind="primary"]:hover { background-color: #059669 !important; }
     div.stButton > button[kind="secondary"] { background-color: #3b82f6 !important; color: white !important; }
@@ -45,22 +50,19 @@ st.markdown("""
 URL_API = "https://script.google.com/macros/s/AKfycbys2ymG2Ad5av2jtR3LFttFiJPkQS2LfiOGwuw7-RynhbuPvEE9R5G90xeS_bofoi-CCg/exec"
 
 # ==============================================================================
-# INICIALIZACIÓN ESTRICTA DEL ESTADO DE SESIÓN PARA LIMPIEZA DE FORMULARIOS
+# INICIALIZACIÓN SEGURA DE VARIABLES (INCLUYE LLAVES DINÁMICAS PARA RESETEO)
 # ==============================================================================
 if 'inventario_lotes' not in st.session_state: st.session_state.inventario_lotes = []
 if 'nombres_productos' not in st.session_state: st.session_state.nombres_productos = []
 if 'carrito_ventas' not in st.session_state: st.session_state.carrito_ventas = []
 if 'precios_venta' not in st.session_state: st.session_state.precios_venta = {}
 
-# Variables para limpiar los campos del Punto de Venta
-if 'vta_cliente' not in st.session_state: st.session_state.vta_cliente = ""
-if 'vta_placa' not in st.session_state: st.session_state.vta_placa = "Seleccione un vehículo"
-if 'vta_prod' not in st.session_state: st.session_state.vta_prod = "Seleccione un producto"
-if 'vta_lote' not in st.session_state: st.session_state.vta_lote = "Seleccione un lote"
-if 'vta_cant' not in st.session_state: st.session_state.vta_cant = 0.0
+# Estos dos contadores son la magia para limpiar los formularios sin causar errores
+if 'sale_key' not in st.session_state: st.session_state.sale_key = 0
+if 'item_key' not in st.session_state: st.session_state.item_key = 0
 
 # ==============================================================================
-# 2. EXTRACTORES CON CACHÉ
+# 2. EXTRACTORES CON CACHÉ AMPLIADO (Elimina la lentitud y congelamientos)
 # ==============================================================================
 @st.cache_data(ttl=300)
 def cargar_catalogo_nube():
@@ -107,11 +109,12 @@ def cargar_vehiculos():
         return []
     except: return []
 
+# Descarga inicial de catálogos maestros
 st.session_state.nombres_productos = cargar_catalogo_nube()
 st.session_state.precios_venta = cargar_precios_nube()
 
 # ==============================================================================
-# 3. ENCABEZADO Y PESTAÑAS
+# 3. CONSTRUCCIÓN DE INTERFAZ Y ENCABEZADO CON LOGO CORPORATIVO
 # ==============================================================================
 nombre_logo = "logoBlumare.jpeg"
 if os.path.exists(nombre_logo):
@@ -142,7 +145,7 @@ st.markdown("<hr style='border-color: #334155; margin-top: 10px; margin-bottom: 
 tab1, tab2, tab3, tab4 = st.tabs(["📥 Entrada de Mercancía", "📦 Inventario", "🛒 Punto de Venta", "📊 Análisis de Utilidades"])
 
 # ------------------------------------------------------------------------------
-# MÓDULO 1: ENTRADA DE MERCANCÍA
+# MÓDULO 1: ENTRADA DE MERCANCÍA (Mermas y Planta)
 # ------------------------------------------------------------------------------
 with tab1:
     col_izq, col_der = st.columns([1, 1])
@@ -226,7 +229,7 @@ with tab1:
 # ------------------------------------------------------------------------------
 with tab2:
     st.subheader("CONTROL DE EXISTENCIAS POR LOTE")
-    sede_inv = st.radio("Sede a consultar:", ["Cali", "Buenaventura"], horizontal=True, key="sede_inv")
+    sede_inv = st.radio("Sede a consultar:", ["Cali", "Buenaventura"], horizontal=True, key="sede_inv_radio")
     inventario_actual = cargar_existencias_nube(sede_inv)
     
     if inventario_actual:
@@ -239,28 +242,29 @@ with tab2:
         st.info("No hay inventario disponible en esta sede.")
 
 # ------------------------------------------------------------------------------
-# MÓDULO 3: PUNTO DE VENTA (CON LIMPIEZA FORZADA DE ESTADOS)
+# MÓDULO 3: PUNTO DE VENTA (IMPLEMENTACIÓN DE LLAVES DINÁMICAS PARA RESETEO)
 # ------------------------------------------------------------------------------
 with tab3:
     c_form, c_cart = st.columns([1, 1.5])
     
     with c_form:
         st.subheader("REGISTRO DE VENTA")
-        sede_vta = st.selectbox("Sede de Despacho:", ["Cali", "Buenaventura"])
+        sede_vta = st.selectbox("Sede de Despacho:", ["Cali", "Buenaventura"], key="vta_sede")
         
-        # Widgets anclados al session_state
-        cliente_vta = st.text_input("Cliente:", key="vta_cliente")
+        # 1. Campos de Cabecera (Dependen de sale_key)
+        cliente_vta = st.text_input("Cliente:", key=f"cliente_{st.session_state.sale_key}")
         placas_disponibles = cargar_vehiculos()
-        placa_vta = st.selectbox("Placa del Vehículo (Despacho):", ["Seleccione un vehículo"] + placas_disponibles, key="vta_placa")
+        placa_vta = st.selectbox("Placa del Vehículo (Despacho):", ["Seleccione un vehículo"] + placas_disponibles, key=f"placa_{st.session_state.sale_key}")
         
         inv_sede = cargar_existencias_nube(sede_vta)
         productos_disp = list(set([item['Producto'] for item in inv_sede if item['Stock'] > 0]))
         
-        prod_vta = st.selectbox("Producto:", ["Seleccione un producto"] + productos_disp, key="vta_prod")
+        # 2. Campos de Ítem (Dependen de item_key)
+        prod_vta = st.selectbox("Producto:", ["Seleccione un producto"] + productos_disp, key=f"prod_{st.session_state.item_key}")
         
         lotes_disp = [item for item in inv_sede if item['Producto'] == prod_vta and item['Stock'] > 0]
         opciones_lotes = [item['ID_Lote'] for item in lotes_disp]
-        lote_vta = st.selectbox("Lote disponible:", ["Seleccione un lote"] + opciones_lotes, key="vta_lote")
+        lote_vta = st.selectbox("Lote disponible:", ["Seleccione un lote"] + opciones_lotes, key=f"lote_{st.session_state.item_key}")
         
         lote_obj = next((item for item in lotes_disp if item['ID_Lote'] == lote_vta), None)
         precio_sugerido = float(st.session_state.precios_venta.get(prod_vta, 0.0))
@@ -268,8 +272,10 @@ with tab3:
         if lote_obj:
             st.caption(f"🔵 Stock disponible: {lote_obj['Stock']:,.2f} KGS | Costo interno: $ {lote_obj['Costo']:,.0f}")
         
-        cant_vta = st.number_input("Cantidad a vender (KGS):", min_value=0.0, step=1.0, key="vta_cant")
-        precio_vta = st.number_input("Precio Venta (COP):", min_value=0.0, value=precio_sugerido, step=1000.0, key=f"vta_precio_{prod_vta}")
+        cant_vta = st.number_input("Cantidad a vender (KGS):", min_value=0.0, step=1.0, key=f"cant_{st.session_state.item_key}")
+        
+        # El precio de venta mantiene dependencia dual para actualizarse al cambiar el producto y al resetear el ítem
+        precio_vta = st.number_input("Precio Venta (COP):", min_value=0.0, value=precio_sugerido, step=1000.0, key=f"precio_{st.session_state.item_key}_{prod_vta}")
         
         if lote_obj:
             subt = cant_vta * precio_vta
@@ -284,10 +290,8 @@ with tab3:
                         "precio": precio_vta, "total": subt, "utilidad": util, "sede": sede_vta,
                         "placa": placa_vta 
                     })
-                    # Magia: Forzamos el reset de los campos de producto sin borrar el cliente ni la placa
-                    st.session_state.vta_prod = "Seleccione un producto"
-                    st.session_state.vta_lote = "Seleccione un lote"
-                    st.session_state.vta_cant = 0.0
+                    # Magia Pura: Incrementar item_key borra Producto, Lote y Cantidad, ¡pero deja el Cliente intacto!
+                    st.session_state.item_key += 1
                     st.rerun()
                 else:
                     st.error("Inventario insuficiente en el lote seleccionado.")
@@ -303,6 +307,7 @@ with tab3:
                 col_item1.write(f"📦 **{item['producto']}**<br><span style='font-size:12px; color:gray;'>{item['lote']} | {item['placa']}</span>", unsafe_allow_html=True)
                 col_item2.write(f"**{item['cantidad']} KGS**")
                 col_item3.write(f"**$ {item['total']:,.0f}**")
+                
                 if col_item4.button("❌", key=f"del_{i}", help="Eliminar este ítem"):
                     st.session_state.carrito_ventas.pop(i)
                     st.rerun()
@@ -315,28 +320,25 @@ with tab3:
             st.markdown(f"#### UTILIDAD: <span style='color:#10b981'>$ {tot_util:,.0f}</span>", unsafe_allow_html=True)
             
             if st.button("✅ FINALIZAR Y DESCONTAR INVENTARIO", type="primary", use_container_width=True):
-                if not st.session_state.vta_cliente:
+                if not cliente_vta:
                     st.error("Debe escribir el nombre del cliente.")
                 else:
-                    payload = {"tipo_operacion": "RegistrarVenta", "cliente": st.session_state.vta_cliente, "items": st.session_state.carrito_ventas}
+                    payload = {"tipo_operacion": "RegistrarVenta", "cliente": cliente_vta, "items": st.session_state.carrito_ventas}
                     with st.spinner("Procesando Venta..."):
                         res = requests.post(URL_API, json=payload)
                         if res.status_code == 200:
                             st.success("¡Venta procesada exitosamente!")
-                            # Reset absoluto de TODO al terminar la factura
-                            st.session_state.carrito_ventas = [] 
-                            st.session_state.vta_cliente = ""
-                            st.session_state.vta_placa = "Seleccione un vehículo"
-                            st.session_state.vta_prod = "Seleccione un producto"
-                            st.session_state.vta_lote = "Seleccione un lote"
-                            st.session_state.vta_cant = 0.0
+                            st.session_state.carrito_ventas = []
+                            # Magia Pura: Incrementar ambos contadores vacía absolutamente toda la interfaz.
+                            st.session_state.sale_key += 1
+                            st.session_state.item_key += 1
                             st.cache_data.clear()
                             st.rerun()
         else:
             st.info("El carrito está vacío.")
 
 # ------------------------------------------------------------------------------
-# MÓDULO 4: ANÁLISIS DE UTILIDADES
+# MÓDULO 4: ANÁLISIS DE UTILIDADES (Auditoría)
 # ------------------------------------------------------------------------------
 with tab4:
     st.subheader("FILTROS DE AUDITORÍA")
