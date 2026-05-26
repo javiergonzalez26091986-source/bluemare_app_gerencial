@@ -6,14 +6,13 @@ import os
 import base64
 
 # ==============================================================================
-# 1. CONFIGURACIÓN DE LA PÁGINA Y PANEL DE ESTILOS CSS SAAS PREMIUM
+# 1. CONFIGURACIÓN DE LA PÁGINA Y PANEL DE ESTILOS CSS
 # ==============================================================================
 icono_pestana = "logoBlumare.ico" if os.path.exists("logoBlumare.ico") else "logoBlumare.jpeg"
 st.set_page_config(page_title="Blumare - SGE", page_icon=icono_pestana, layout="wide")
 
 st.markdown("""
     <style>
-    /* Ocultamiento absoluto de componentes nativos de desarrollo de Streamlit */
     [data-testid="stHeader"] { display: none !important; }
     [data-testid="stToolbar"] { display: none !important; }
     .stAppDeployButton { display: none !important; }
@@ -21,7 +20,6 @@ st.markdown("""
     footer { display: none !important; }
     div[class*="viewerBadge"], [data-testid="stAppCreatorBadge"] { display: none !important; }
     
-    /* Paleta Enterprise Slate 900 */
     .stApp { background-color: #0f172a; }
     .stTextInput > div > div > input, .stSelectbox > div > div > div {
         background-color: #1e293b !important;
@@ -30,7 +28,6 @@ st.markdown("""
         color: #f8fafc !important;
     }
     
-    /* Configuración Estricta de Botones Flat */
     div.stButton > button {
         border-radius: 8px !important;
         font-weight: 800 !important;
@@ -38,8 +35,6 @@ st.markdown("""
         transition: transform 0.1s ease !important;
     }
     div.stButton > button:active { transform: scale(0.98) !important; }
-    
-    /* Identificación por colores de acuerdo a su naturaleza corporativa */
     div.stButton > button[kind="primary"] { background-color: #10b981 !important; color: white !important; }
     div.stButton > button[kind="primary"]:hover { background-color: #059669 !important; }
     div.stButton > button[kind="secondary"] { background-color: #3b82f6 !important; color: white !important; }
@@ -49,14 +44,23 @@ st.markdown("""
 
 URL_API = "https://script.google.com/macros/s/AKfycbys2ymG2Ad5av2jtR3LFttFiJPkQS2LfiOGwuw7-RynhbuPvEE9R5G90xeS_bofoi-CCg/exec"
 
-# Inicialización segura de variables en el Estado de Sesión global
+# ==============================================================================
+# INICIALIZACIÓN ESTRICTA DEL ESTADO DE SESIÓN PARA LIMPIEZA DE FORMULARIOS
+# ==============================================================================
 if 'inventario_lotes' not in st.session_state: st.session_state.inventario_lotes = []
 if 'nombres_productos' not in st.session_state: st.session_state.nombres_productos = []
 if 'carrito_ventas' not in st.session_state: st.session_state.carrito_ventas = []
 if 'precios_venta' not in st.session_state: st.session_state.precios_venta = {}
 
+# Variables para limpiar los campos del Punto de Venta
+if 'vta_cliente' not in st.session_state: st.session_state.vta_cliente = ""
+if 'vta_placa' not in st.session_state: st.session_state.vta_placa = "Seleccione un vehículo"
+if 'vta_prod' not in st.session_state: st.session_state.vta_prod = "Seleccione un producto"
+if 'vta_lote' not in st.session_state: st.session_state.vta_lote = "Seleccione un lote"
+if 'vta_cant' not in st.session_state: st.session_state.vta_cant = 0.0
+
 # ==============================================================================
-# 2. EXTRACTORES CON CACHÉ AMPLIADO (Elimina la lentitud y congelamientos)
+# 2. EXTRACTORES CON CACHÉ
 # ==============================================================================
 @st.cache_data(ttl=300)
 def cargar_catalogo_nube():
@@ -103,12 +107,11 @@ def cargar_vehiculos():
         return []
     except: return []
 
-# Descarga inicial de catálogos maestros
 st.session_state.nombres_productos = cargar_catalogo_nube()
 st.session_state.precios_venta = cargar_precios_nube()
 
 # ==============================================================================
-# 3. CONSTRUCCIÓN DE INTERFAZ Y ENCABEZADO CON LOGO CORPORATIVO
+# 3. ENCABEZADO Y PESTAÑAS
 # ==============================================================================
 nombre_logo = "logoBlumare.jpeg"
 if os.path.exists(nombre_logo):
@@ -118,7 +121,6 @@ if os.path.exists(nombre_logo):
 else:
     logo_html = "🏢" 
 
-# --- ENCABEZADO CON BOTÓN DE SINCRONIZACIÓN MANUAL ---
 col_logo, col_sync = st.columns([8, 2])
 with col_logo:
     st.markdown(
@@ -140,7 +142,7 @@ st.markdown("<hr style='border-color: #334155; margin-top: 10px; margin-bottom: 
 tab1, tab2, tab3, tab4 = st.tabs(["📥 Entrada de Mercancía", "📦 Inventario", "🛒 Punto de Venta", "📊 Análisis de Utilidades"])
 
 # ------------------------------------------------------------------------------
-# MÓDULO 1: ENTRADA DE MERCANCÍA (Mermas y Planta)
+# MÓDULO 1: ENTRADA DE MERCANCÍA
 # ------------------------------------------------------------------------------
 with tab1:
     col_izq, col_der = st.columns([1, 1])
@@ -237,7 +239,7 @@ with tab2:
         st.info("No hay inventario disponible en esta sede.")
 
 # ------------------------------------------------------------------------------
-# MÓDULO 3: PUNTO DE VENTA (PRECIOS EN CALIENTE Y ELIMINACIÓN DE ÍTEMS)
+# MÓDULO 3: PUNTO DE VENTA (CON LIMPIEZA FORZADA DE ESTADOS)
 # ------------------------------------------------------------------------------
 with tab3:
     c_form, c_cart = st.columns([1, 1.5])
@@ -245,10 +247,11 @@ with tab3:
     with c_form:
         st.subheader("REGISTRO DE VENTA")
         sede_vta = st.selectbox("Sede de Despacho:", ["Cali", "Buenaventura"])
-        cliente_vta = st.text_input("Cliente:")
         
+        # Widgets anclados al session_state
+        cliente_vta = st.text_input("Cliente:", key="vta_cliente")
         placas_disponibles = cargar_vehiculos()
-        placa_vta = st.selectbox("Placa del Vehículo (Despacho):", ["Seleccione un vehículo"] + placas_disponibles)
+        placa_vta = st.selectbox("Placa del Vehículo (Despacho):", ["Seleccione un vehículo"] + placas_disponibles, key="vta_placa")
         
         inv_sede = cargar_existencias_nube(sede_vta)
         productos_disp = list(set([item['Producto'] for item in inv_sede if item['Stock'] > 0]))
@@ -260,16 +263,12 @@ with tab3:
         lote_vta = st.selectbox("Lote disponible:", ["Seleccione un lote"] + opciones_lotes, key="vta_lote")
         
         lote_obj = next((item for item in lotes_disp if item['ID_Lote'] == lote_vta), None)
-        
-        # EXTRACCIÓN DINÁMICA DEL PRECIO EN BINDING CON LA HOJA MAESTRA
         precio_sugerido = float(st.session_state.precios_venta.get(prod_vta, 0.0))
         
         if lote_obj:
             st.caption(f"🔵 Stock disponible: {lote_obj['Stock']:,.2f} KGS | Costo interno: $ {lote_obj['Costo']:,.0f}")
         
         cant_vta = st.number_input("Cantidad a vender (KGS):", min_value=0.0, step=1.0, key="vta_cant")
-        
-        # El identificador de llave vinculada al producto evita que el precio se quede estático
         precio_vta = st.number_input("Precio Venta (COP):", min_value=0.0, value=precio_sugerido, step=1000.0, key=f"vta_precio_{prod_vta}")
         
         if lote_obj:
@@ -285,10 +284,10 @@ with tab3:
                         "precio": precio_vta, "total": subt, "utilidad": util, "sede": sede_vta,
                         "placa": placa_vta 
                     })
-                    # Reseteo estricto del estado visual de los widgets de captura
-                    del st.session_state["vta_prod"]
-                    del st.session_state["vta_lote"]
-                    del st.session_state["vta_cant"]
+                    # Magia: Forzamos el reset de los campos de producto sin borrar el cliente ni la placa
+                    st.session_state.vta_prod = "Seleccione un producto"
+                    st.session_state.vta_lote = "Seleccione un lote"
+                    st.session_state.vta_cant = 0.0
                     st.rerun()
                 else:
                     st.error("Inventario insuficiente en el lote seleccionado.")
@@ -299,14 +298,11 @@ with tab3:
         st.subheader("DETALLE DE LA FACTURA")
         if st.session_state.carrito_ventas:
             st.markdown("---")
-            # Lista dinámica e interactiva con destructor individual
             for i, item in enumerate(st.session_state.carrito_ventas):
                 col_item1, col_item2, col_item3, col_item4 = st.columns([3, 1, 2, 1])
                 col_item1.write(f"📦 **{item['producto']}**<br><span style='font-size:12px; color:gray;'>{item['lote']} | {item['placa']}</span>", unsafe_allow_html=True)
                 col_item2.write(f"**{item['cantidad']} KGS**")
                 col_item3.write(f"**$ {item['total']:,.0f}**")
-                
-                # Eliminador de filas por error humano
                 if col_item4.button("❌", key=f"del_{i}", help="Eliminar este ítem"):
                     st.session_state.carrito_ventas.pop(i)
                     st.rerun()
@@ -319,22 +315,28 @@ with tab3:
             st.markdown(f"#### UTILIDAD: <span style='color:#10b981'>$ {tot_util:,.0f}</span>", unsafe_allow_html=True)
             
             if st.button("✅ FINALIZAR Y DESCONTAR INVENTARIO", type="primary", use_container_width=True):
-                if not cliente_vta:
+                if not st.session_state.vta_cliente:
                     st.error("Debe escribir el nombre del cliente.")
                 else:
-                    payload = {"tipo_operacion": "RegistrarVenta", "cliente": cliente_vta, "items": st.session_state.carrito_ventas}
+                    payload = {"tipo_operacion": "RegistrarVenta", "cliente": st.session_state.vta_cliente, "items": st.session_state.carrito_ventas}
                     with st.spinner("Procesando Venta..."):
                         res = requests.post(URL_API, json=payload)
                         if res.status_code == 200:
                             st.success("¡Venta procesada exitosamente!")
+                            # Reset absoluto de TODO al terminar la factura
                             st.session_state.carrito_ventas = [] 
+                            st.session_state.vta_cliente = ""
+                            st.session_state.vta_placa = "Seleccione un vehículo"
+                            st.session_state.vta_prod = "Seleccione un producto"
+                            st.session_state.vta_lote = "Seleccione un lote"
+                            st.session_state.vta_cant = 0.0
                             st.cache_data.clear()
                             st.rerun()
         else:
             st.info("El carrito está vacío.")
 
 # ------------------------------------------------------------------------------
-# MÓDULO 4: ANÁLISIS DE UTILIDADES (Auditoría)
+# MÓDULO 4: ANÁLISIS DE UTILIDADES
 # ------------------------------------------------------------------------------
 with tab4:
     st.subheader("FILTROS DE AUDITORÍA")
