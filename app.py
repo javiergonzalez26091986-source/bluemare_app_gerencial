@@ -8,11 +8,10 @@ import base64
 # ==============================================================================
 # 1. CONFIGURACIÓN DE LA PÁGINA Y ESTADO DE SESIÓN
 # ==============================================================================
-# 1.1 Favicon en la pestaña
 icono_pestana = "logoBlumare.ico" if os.path.exists("logoBlumare.ico") else "logoBlumare.jpeg"
 st.set_page_config(page_title="Blumare - SGE", page_icon=icono_pestana, layout="wide")
 
-# 1.2 Inyección CSS (Estilo Enterprise, Botones Flat y Ocultamiento del Badge)
+# Inyección CSS (Colores de botones diferenciados y Ocultamiento del Badge)
 st.markdown("""
     <style>
     /* Ocultar elementos de Streamlit y foto de perfil */
@@ -31,14 +30,23 @@ st.markdown("""
         border-radius: 8px !important;
         color: #f8fafc !important;
     }
+    
+    /* Diseño general de botones */
     div.stButton > button {
         border-radius: 8px !important;
-        font-weight: 600 !important;
+        font-weight: 800 !important;
         border: none !important;
         transition: transform 0.1s ease !important;
     }
+    div.stButton > button:active { transform: scale(0.98) !important; }
+    
+    /* Botón Primario (Verde - Finalizar/Registrar) */
     div.stButton > button[kind="primary"] { background-color: #10b981 !important; color: white !important; }
-    div.stButton > button[kind="primary"]:active { transform: scale(0.98) !important; }
+    div.stButton > button[kind="primary"]:hover { background-color: #059669 !important; }
+    
+    /* Botón Secundario (Azul - Añadir al Carrito) */
+    div.stButton > button[kind="secondary"] { background-color: #3b82f6 !important; color: white !important; }
+    div.stButton > button[kind="secondary"]:hover { background-color: #2563eb !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -49,16 +57,17 @@ if 'nombres_productos' not in st.session_state: st.session_state.nombres_product
 if 'carrito_ventas' not in st.session_state: st.session_state.carrito_ventas = []
 
 # ==============================================================================
-# 2. FUNCIONES DE CONEXIÓN CON LA NUBE
+# 2. FUNCIONES DE CONEXIÓN CON LA NUBE (Optimizadas para Velocidad)
 # ==============================================================================
-@st.cache_data(ttl=5)
+# NOTA: Cambiamos ttl=5 a ttl=300 (5 minutos). Esto elimina el lag mientras se escribe.
+@st.cache_data(ttl=300)
 def cargar_catalogo_nube():
     try:
         res = requests.get(f"{URL_API}?tipo_operacion=ObtenerProductos", timeout=10)
         return res.json() if isinstance(res.json(), list) else []
     except: return []
 
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=300)
 def cargar_existencias_nube(sede):
     try:
         res = requests.get(f"{URL_API}?sede={sede}", timeout=10)
@@ -68,20 +77,19 @@ def cargar_existencias_nube(sede):
         return []
     except: return []
 
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=300)
 def cargar_historico_ventas():
     try:
         res = requests.get(f"{URL_API}?tipo_operacion=ObtenerDespachos", timeout=12)
         return res.json() if isinstance(res.json(), list) else []
     except: return []
 
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=300)
 def cargar_vehiculos():
     try:
         res = requests.get(f"{URL_API}?tipo_operacion=ObtenerVehiculos", timeout=10)
         datos = res.json()
         if isinstance(datos, list):
-            # Procesa tanto si llega como ["ABC001"] o como [["ABC001"]]
             if len(datos) > 0 and isinstance(datos[0], list):
                 return [str(d[0]).strip() for d in datos if str(d[0]).strip() not in ["Placa", ""]]
             else:
@@ -100,7 +108,7 @@ if os.path.exists(nombre_logo):
         encoded_string = base64.b64encode(image_file.read()).decode()
     logo_html = f'<img src="data:image/jpeg;base64,{encoded_string}" width="55" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.5);">'
 else:
-    logo_html = "🏢" # Fallback si no encuentra la imagen
+    logo_html = "🏢" 
 
 st.markdown(
     f"""
@@ -181,8 +189,7 @@ with tab1:
             st.warning("Completa el producto y las libras antes de registrar.")
         else:
             datos_compra = {
-                "tipo_operacion": "RegistrarCompra",
-                "id_venta": f"CMP-{int(datetime.now().timestamp())}",
+                "tipo_operacion": "RegistrarCompra", "id_venta": f"CMP-{int(datetime.now().timestamp())}",
                 "fecha_hora": fecha_ent, "sede_despacho": sede_ent, "cliente": "PROVEEDOR",
                 "producto": prod_ent, "libras": lbs_ent, "precio_materia_prima": precio_lb_ent,
                 "descongelacion": p_desc, "pelado_desvenado": p_pyd, "hidratacion": p_hid,
@@ -195,7 +202,7 @@ with tab1:
                 res = requests.post(URL_API, json=datos_compra)
                 if res.status_code == 200:
                     st.success("¡Registro Completo! Sábana mapeada en Historico_Compras.")
-                    cargar_existencias_nube.clear()
+                    cargar_existencias_nube.clear() # Limpia la caché para que el inventario se actualice
                 else:
                     st.error("Error al registrar en la base de datos.")
 
@@ -205,7 +212,6 @@ with tab1:
 with tab2:
     st.subheader("CONTROL DE EXISTENCIAS POR LOTE")
     sede_inv = st.radio("Sede a consultar:", ["Cali", "Buenaventura"], horizontal=True, key="sede_inv")
-    
     inventario_actual = cargar_existencias_nube(sede_inv)
     
     if inventario_actual:
@@ -213,7 +219,6 @@ with tab2:
         kpi1, kpi2 = st.columns(2)
         kpi1.metric("Stock Total", f"{df_inv['Stock'].sum():,.2f} KGS")
         kpi2.metric("Capital en Bodega", f"$ {(df_inv['Stock'] * df_inv['Costo']).sum():,.0f} COP")
-        
         st.dataframe(df_inv, use_container_width=True, hide_index=True)
         
         st.markdown("### 🔍 Trazabilidad de Lote")
@@ -225,7 +230,7 @@ with tab2:
         st.info("No hay inventario disponible en esta sede.")
 
 # -------------------------------------------------------------
-# MÓDULO 3: PUNTO DE VENTA (AHORA CON PLACAS)
+# MÓDULO 3: PUNTO DE VENTA (OPTIMIZADO Y CORREGIDO)
 # -------------------------------------------------------------
 with tab3:
     c_form, c_cart = st.columns([1, 1.5])
@@ -235,45 +240,47 @@ with tab3:
         sede_vta = st.selectbox("Sede de Despacho:", ["Cali", "Buenaventura"])
         cliente_vta = st.text_input("Cliente:")
         
-        # --- CARGAR PLACAS DE VEHÍCULOS ---
         placas_disponibles = cargar_vehiculos()
         placa_vta = st.selectbox("Placa del Vehículo (Despacho):", ["Seleccione un vehículo"] + placas_disponibles)
         
-        # --- LOGICA DE PRODUCTOS Y LOTES ---
         inv_sede = cargar_existencias_nube(sede_vta)
         productos_disp = list(set([item['Producto'] for item in inv_sede if item['Stock'] > 0]))
         
-        prod_vta = st.selectbox("Producto:", ["Seleccione un producto"] + productos_disp)
+        # Uso de "keys" dinámicas para poder vaciar los campos después de agregar al carrito
+        prod_vta = st.selectbox("Producto:", ["Seleccione un producto"] + productos_disp, key="vta_prod")
         
         lotes_disp = [item for item in inv_sede if item['Producto'] == prod_vta and item['Stock'] > 0]
         opciones_lotes = [item['ID_Lote'] for item in lotes_disp]
-        
-        lote_vta = st.selectbox("Lote disponible:", ["Seleccione un lote"] + opciones_lotes)
+        lote_vta = st.selectbox("Lote disponible:", ["Seleccione un lote"] + opciones_lotes, key="vta_lote")
         
         lote_obj = next((item for item in lotes_disp if item['ID_Lote'] == lote_vta), None)
         if lote_obj:
             st.caption(f"🔵 Stock disponible: {lote_obj['Stock']:,.2f} KGS | Costo interno: $ {lote_obj['Costo']:,.0f}")
-            precio_sugerido = lote_obj['Costo'] * 1.30
+            precio_sugerido = float(lote_obj['Costo'] * 1.30)
         else:
             precio_sugerido = 0.0
 
-        cant_vta = st.number_input("Cantidad a vender (KGS):", min_value=0.0, step=1.0)
-        precio_vta = st.number_input("Precio Venta (COP):", min_value=0.0, value=float(precio_sugerido), step=1000.0)
+        cant_vta = st.number_input("Cantidad a vender (KGS):", min_value=0.0, step=1.0, key="vta_cant")
+        precio_vta = st.number_input("Precio Venta (COP):", min_value=0.0, value=precio_sugerido, step=1000.0, key="vta_precio")
         
         if lote_obj:
             subt = cant_vta * precio_vta
             util = (precio_vta - lote_obj['Costo']) * cant_vta
             st.success(f"Subtotal: $ {subt:,.0f} | Utilidad: $ {util:,.0f}")
         
-        if st.button("➕ AÑADIR A LA FACTURA", use_container_width=True):
+        # NOTA EL type="secondary" que le dará el color azul definido en el CSS
+        if st.button("➕ AÑADIR A LA FACTURA", type="secondary", use_container_width=True):
             if prod_vta != "Seleccione un producto" and lote_vta != "Seleccione un lote" and placa_vta != "Seleccione un vehículo" and cant_vta > 0:
                 if cant_vta <= lote_obj['Stock']:
-                    # SE AÑADE LA PLACA AL CARRITO
                     st.session_state.carrito_ventas.append({
                         "producto": prod_vta, "lote": lote_vta, "cantidad": cant_vta,
                         "precio": precio_vta, "total": subt, "utilidad": util, "sede": sede_vta,
                         "placa": placa_vta 
                     })
+                    # Magia: Al eliminar estas variables del session_state, los selectores vuelven a quedar "en blanco"
+                    del st.session_state["vta_prod"]
+                    del st.session_state["vta_lote"]
+                    del st.session_state["vta_cant"]
                     st.rerun()
                 else:
                     st.error("Inventario insuficiente en el lote seleccionado.")
@@ -283,12 +290,21 @@ with tab3:
     with c_cart:
         st.subheader("DETALLE DE LA FACTURA")
         if st.session_state.carrito_ventas:
-            df_carrito = pd.DataFrame(st.session_state.carrito_ventas)
-            # Mostramos también la placa en la tabla visual de la factura
-            st.dataframe(df_carrito[['producto', 'lote', 'placa', 'cantidad', 'precio', 'total']], use_container_width=True, hide_index=True)
-            
-            tot_fact = df_carrito['total'].sum()
-            tot_util = df_carrito['utilidad'].sum()
+            # Reemplazamos la tabla simple por una lista interactiva donde puedes ELIMINAR un producto
+            st.markdown("---")
+            for i, item in enumerate(st.session_state.carrito_ventas):
+                col_item1, col_item2, col_item3, col_item4 = st.columns([3, 1, 2, 1])
+                col_item1.write(f"📦 **{item['producto']}**<br><span style='font-size:12px; color:gray;'>{item['lote']} | {item['placa']}</span>", unsafe_allow_html=True)
+                col_item2.write(f"**{item['cantidad']} KGS**")
+                col_item3.write(f"**$ {item['total']:,.0f}**")
+                # Botón de borrar ítem específico
+                if col_item4.button("❌", key=f"del_{i}", help="Eliminar este ítem"):
+                    st.session_state.carrito_ventas.pop(i)
+                    st.rerun()
+            st.markdown("---")
+
+            tot_fact = sum(item['total'] for item in st.session_state.carrito_ventas)
+            tot_util = sum(item['utilidad'] for item in st.session_state.carrito_ventas)
             
             st.markdown(f"### TOTAL FACTURA: $ {tot_fact:,.0f}")
             st.markdown(f"#### UTILIDAD: <span style='color:#10b981'>$ {tot_util:,.0f}</span>", unsafe_allow_html=True)
@@ -297,14 +313,13 @@ with tab3:
                 if not cliente_vta:
                     st.error("Debe escribir el nombre del cliente.")
                 else:
-                    # El payload viaja con la lista de items, y cada item ahora contiene la llave "placa"
                     payload = {"tipo_operacion": "RegistrarVenta", "cliente": cliente_vta, "items": st.session_state.carrito_ventas}
                     with st.spinner("Procesando Venta..."):
                         res = requests.post(URL_API, json=payload)
                         if res.status_code == 200:
                             st.success("¡Venta procesada exitosamente!")
-                            st.session_state.carrito_ventas = []
-                            cargar_existencias_nube.clear()
+                            st.session_state.carrito_ventas = [] # Vacía el carrito global
+                            cargar_existencias_nube.clear() # Fuerza la actualización de inventario
                             st.rerun()
         else:
             st.info("El carrito está vacío.")
