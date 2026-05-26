@@ -2,15 +2,48 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime
+import os
+import base64
 
 # ==============================================================================
 # 1. CONFIGURACIÓN DE LA PÁGINA Y ESTADO DE SESIÓN
 # ==============================================================================
-st.set_page_config(page_title="Blumare - SGE", page_icon="🏢", layout="wide")
+# 1.1 Favicon en la pestaña
+icono_pestana = "logoBlumare.ico" if os.path.exists("logoBlumare.ico") else "logoBlumare.jpeg"
+st.set_page_config(page_title="Blumare - SGE", page_icon=icono_pestana, layout="wide")
+
+# 1.2 Inyección CSS (Estilo Enterprise, Botones Flat y Ocultamiento del Badge)
+st.markdown("""
+    <style>
+    /* Ocultar elementos de Streamlit y foto de perfil */
+    [data-testid="stHeader"] { display: none !important; }
+    [data-testid="stToolbar"] { display: none !important; }
+    .stAppDeployButton { display: none !important; }
+    #MainMenu { display: none !important; }
+    footer { display: none !important; }
+    div[class*="viewerBadge"], [data-testid="stAppCreatorBadge"] { display: none !important; }
+    
+    /* Estilos Enterprise Slate 900 */
+    .stApp { background-color: #0f172a; }
+    .stTextInput > div > div > input, .stSelectbox > div > div > div {
+        background-color: #1e293b !important;
+        border: 1px solid #334155 !important;
+        border-radius: 8px !important;
+        color: #f8fafc !important;
+    }
+    div.stButton > button {
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        border: none !important;
+        transition: transform 0.1s ease !important;
+    }
+    div.stButton > button[kind="primary"] { background-color: #10b981 !important; color: white !important; }
+    div.stButton > button[kind="primary"]:active { transform: scale(0.98) !important; }
+    </style>
+    """, unsafe_allow_html=True)
 
 URL_API = "https://script.google.com/macros/s/AKfycbys2ymG2Ad5av2jtR3LFttFiJPkQS2LfiOGwuw7-RynhbuPvEE9R5G90xeS_bofoi-CCg/exec"
 
-# Inicialización de variables globales en el Session State de Streamlit
 if 'inventario_lotes' not in st.session_state: st.session_state.inventario_lotes = []
 if 'nombres_productos' not in st.session_state: st.session_state.nombres_productos = []
 if 'carrito_ventas' not in st.session_state: st.session_state.carrito_ventas = []
@@ -31,7 +64,6 @@ def cargar_existencias_nube(sede):
         res = requests.get(f"{URL_API}?sede={sede}", timeout=10)
         datos = res.json()
         if isinstance(datos, list):
-            # Mapeo: [0]Producto, [1]Stock, [2]Sede, [3]Costo, [4]ID_Lote
             return [{"Producto": d[0], "Stock": float(d[1]), "Sede": d[2], "Costo": float(d[3]), "ID_Lote": d[4]} for d in datos]
         return []
     except: return []
@@ -43,13 +75,42 @@ def cargar_historico_ventas():
         return res.json() if isinstance(res.json(), list) else []
     except: return []
 
+@st.cache_data(ttl=10)
+def cargar_vehiculos():
+    try:
+        res = requests.get(f"{URL_API}?tipo_operacion=ObtenerVehiculos", timeout=10)
+        datos = res.json()
+        if isinstance(datos, list):
+            # Procesa tanto si llega como ["ABC001"] o como [["ABC001"]]
+            if len(datos) > 0 and isinstance(datos[0], list):
+                return [str(d[0]).strip() for d in datos if str(d[0]).strip() not in ["Placa", ""]]
+            else:
+                return [str(d).strip() for d in datos if str(d).strip() not in ["Placa", ""]]
+        return []
+    except: return []
+
 st.session_state.nombres_productos = cargar_catalogo_nube()
 
 # ==============================================================================
-# ENCABEZADO
+# ENCABEZADO CON LOGO (BASE64)
 # ==============================================================================
-st.markdown("<h1 style='text-align: center; color: #00f0ff;'>SISTEMA INTEGRAL BLUMARE</h1>", unsafe_allow_html=True)
-st.markdown("---")
+nombre_logo = "logoBlumare.jpeg"
+if os.path.exists(nombre_logo):
+    with open(nombre_logo, "rb") as image_file:
+        encoded_string = base64.b64encode(image_file.read()).decode()
+    logo_html = f'<img src="data:image/jpeg;base64,{encoded_string}" width="55" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.5);">'
+else:
+    logo_html = "🏢" # Fallback si no encuentra la imagen
+
+st.markdown(
+    f"""
+    <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 5px; margin-top: 15px;">
+        {logo_html}
+        <h1 style='color: #f8fafc; margin: 0; font-weight: 800; letter-spacing: 1px; font-size: 32px;'>SISTEMA INTEGRAL BLUMARE</h1>
+    </div>
+    <hr style="border-color: #334155; margin-top: 15px; margin-bottom: 25px;">
+    """, unsafe_allow_html=True
+)
 
 # ==============================================================================
 # 3. MAQUETACIÓN DE PESTAÑAS (MÓDULOS)
@@ -66,7 +127,6 @@ with tab1:
         st.subheader("DATOS DE ENTRADA")
         sede_ent = st.radio("Sede:", ["Cali", "Buenaventura"], horizontal=True)
         fecha_ent = st.text_input("Fecha (AAAAMMDD):", value=datetime.now().strftime("%Y%m%d"))
-        
         prod_ent = st.selectbox("Producto:", ["Seleccione un producto"] + st.session_state.nombres_productos)
         
         col_lbs, col_precio = st.columns(2)
@@ -74,10 +134,8 @@ with tab1:
         precio_lb_ent = col_precio.number_input("Precio Unitario:", min_value=0.0, value=0.0, step=1.0)
         trm_ent = st.number_input("TRM (Tasa de Cambio - Si aplica):", min_value=0.0, value=0.0, step=50.0)
 
-    # Cálculos en tiempo real
     es_fresco = "FRESCO" in prod_ent.upper()
     es_plaqueta = "PLAQUETA" in prod_ent.upper()
-    
     kgs = lbs_ent / 2.2 if lbs_ent > 0 else 0
     c_proceso, c_logistica, peso_final, c_mp_cop, c_mp_usd = 0, 0, 0, 0, 0
     p_desc, p_pyd, p_hid, p_sec, p_gla = 0, 0, 0, 0, 0
@@ -104,7 +162,6 @@ with tab1:
     with col_der:
         st.subheader("PROCESO DE PLANTA (KGS)")
         st.info(f"Rendimiento calculado para: **{prod_ent}**")
-        
         c1, c2 = st.columns(2)
         c1.metric("1. Descongelación", f"{p_desc:,.2f} KGS")
         c2.metric("2. Pelado/Desvenado", f"{p_pyd:,.2f} KGS")
@@ -138,7 +195,7 @@ with tab1:
                 res = requests.post(URL_API, json=datos_compra)
                 if res.status_code == 200:
                     st.success("¡Registro Completo! Sábana mapeada en Historico_Compras.")
-                    cargar_existencias_nube.clear() # Forzar recarga de stock
+                    cargar_existencias_nube.clear()
                 else:
                     st.error("Error al registrar en la base de datos.")
 
@@ -153,14 +210,12 @@ with tab2:
     
     if inventario_actual:
         df_inv = pd.DataFrame(inventario_actual)
-        
         kpi1, kpi2 = st.columns(2)
         kpi1.metric("Stock Total", f"{df_inv['Stock'].sum():,.2f} KGS")
         kpi2.metric("Capital en Bodega", f"$ {(df_inv['Stock'] * df_inv['Costo']).sum():,.0f} COP")
         
         st.dataframe(df_inv, use_container_width=True, hide_index=True)
         
-        # Reemplazo del "Doble Clic" para ver Trazabilidad
         st.markdown("### 🔍 Trazabilidad de Lote")
         lote_traz = st.selectbox("Seleccione un lote para ver su historial:", [""] + df_inv['ID_Lote'].tolist())
         if lote_traz:
@@ -170,7 +225,7 @@ with tab2:
         st.info("No hay inventario disponible en esta sede.")
 
 # -------------------------------------------------------------
-# MÓDULO 3: PUNTO DE VENTA
+# MÓDULO 3: PUNTO DE VENTA (AHORA CON PLACAS)
 # -------------------------------------------------------------
 with tab3:
     c_form, c_cart = st.columns([1, 1.5])
@@ -180,7 +235,11 @@ with tab3:
         sede_vta = st.selectbox("Sede de Despacho:", ["Cali", "Buenaventura"])
         cliente_vta = st.text_input("Cliente:")
         
-        # Lógica de selectores en cascada
+        # --- CARGAR PLACAS DE VEHÍCULOS ---
+        placas_disponibles = cargar_vehiculos()
+        placa_vta = st.selectbox("Placa del Vehículo (Despacho):", ["Seleccione un vehículo"] + placas_disponibles)
+        
+        # --- LOGICA DE PRODUCTOS Y LOTES ---
         inv_sede = cargar_existencias_nube(sede_vta)
         productos_disp = list(set([item['Producto'] for item in inv_sede if item['Stock'] > 0]))
         
@@ -207,34 +266,38 @@ with tab3:
             st.success(f"Subtotal: $ {subt:,.0f} | Utilidad: $ {util:,.0f}")
         
         if st.button("➕ AÑADIR A LA FACTURA", use_container_width=True):
-            if prod_vta != "Seleccione un producto" and lote_vta != "Seleccione un lote" and cant_vta > 0:
+            if prod_vta != "Seleccione un producto" and lote_vta != "Seleccione un lote" and placa_vta != "Seleccione un vehículo" and cant_vta > 0:
                 if cant_vta <= lote_obj['Stock']:
+                    # SE AÑADE LA PLACA AL CARRITO
                     st.session_state.carrito_ventas.append({
                         "producto": prod_vta, "lote": lote_vta, "cantidad": cant_vta,
-                        "precio": precio_vta, "total": subt, "utilidad": util, "sede": sede_vta
+                        "precio": precio_vta, "total": subt, "utilidad": util, "sede": sede_vta,
+                        "placa": placa_vta 
                     })
                     st.rerun()
                 else:
                     st.error("Inventario insuficiente en el lote seleccionado.")
             else:
-                st.warning("Verifique los datos de entrada.")
+                st.warning("Verifique: Cliente, Producto, Lote, Vehículo y Cantidad.")
 
     with c_cart:
         st.subheader("DETALLE DE LA FACTURA")
         if st.session_state.carrito_ventas:
             df_carrito = pd.DataFrame(st.session_state.carrito_ventas)
-            st.dataframe(df_carrito[['producto', 'lote', 'cantidad', 'precio', 'total']], use_container_width=True, hide_index=True)
+            # Mostramos también la placa en la tabla visual de la factura
+            st.dataframe(df_carrito[['producto', 'lote', 'placa', 'cantidad', 'precio', 'total']], use_container_width=True, hide_index=True)
             
             tot_fact = df_carrito['total'].sum()
             tot_util = df_carrito['utilidad'].sum()
             
             st.markdown(f"### TOTAL FACTURA: $ {tot_fact:,.0f}")
-            st.markdown(f"#### UTILIDAD: <span style='color:#2ecc71'>$ {tot_util:,.0f}</span>", unsafe_allow_html=True)
+            st.markdown(f"#### UTILIDAD: <span style='color:#10b981'>$ {tot_util:,.0f}</span>", unsafe_allow_html=True)
             
             if st.button("✅ FINALIZAR Y DESCONTAR INVENTARIO", type="primary", use_container_width=True):
                 if not cliente_vta:
                     st.error("Debe escribir el nombre del cliente.")
                 else:
+                    # El payload viaja con la lista de items, y cada item ahora contiene la llave "placa"
                     payload = {"tipo_operacion": "RegistrarVenta", "cliente": cliente_vta, "items": st.session_state.carrito_ventas}
                     with st.spinner("Procesando Venta..."):
                         res = requests.post(URL_API, json=payload)
@@ -259,19 +322,15 @@ with tab4:
     historico = cargar_historico_ventas()
     
     if historico:
-        # Mapear matriz cruda a DataFrame
         df_ut = pd.DataFrame(historico)
-        # Asumiendo estructura: 0:ID, 1:Fecha, 2:Sede, 3:Cliente, 4:Prod, 5:Lote, 6:Cant, 7:Precio, 8:Total, 9:Utilidad
         df_ut = df_ut.rename(columns={1:'Fecha', 2:'Sede', 4:'Producto', 5:'Lote', 6:'Cantidad', 8:'Total', 9:'Utilidad'})
         df_ut['Total'] = pd.to_numeric(df_ut['Total'], errors='coerce').fillna(0)
         df_ut['Utilidad'] = pd.to_numeric(df_ut['Utilidad'], errors='coerce').fillna(0)
         df_ut['Cantidad'] = pd.to_numeric(df_ut['Cantidad'], errors='coerce').fillna(0)
         
-        # Filtros básicos
         if sede_ut != "Todas las Sedes": df_ut = df_ut[df_ut['Sede'] == sede_ut]
         if prod_ut != "Todos los Productos": df_ut = df_ut[df_ut['Producto'] == prod_ut]
         
-        # KPIs
         u1, u2, u3 = st.columns(3)
         u1.metric("INGRESOS BRUTOS", f"$ {df_ut['Total'].sum():,.0f} COP")
         u2.metric("UTILIDAD NETA REAL", f"$ {df_ut['Utilidad'].sum():,.0f} COP")
@@ -279,12 +338,10 @@ with tab4:
         
         st.dataframe(df_ut[['Fecha', 'Producto', 'Lote', 'Cantidad', 'Total', 'Utilidad', 'Sede']], use_container_width=True)
         
-        # Exportaciones (Sustituye a filedialog de Tkinter)
         col_exp1, col_exp2 = st.columns(2)
         csv = df_ut.to_csv(index=False).encode('utf-8')
         col_exp1.download_button(label="🟢 EXPORTAR A EXCEL (CSV)", data=csv, file_name='utilidades_blumare.csv', mime='text/csv', use_container_width=True)
         
-        # Exportación de reporte plano (.txt)
         reporte_txt = f"SISTEMA INTEGRADO BLUMARE\nREPORTE GERENCIAL DE UTILIDADES\nTotal Ingresos: {df_ut['Total'].sum()}\nUtilidad: {df_ut['Utilidad'].sum()}"
         col_exp2.download_button(label="🔴 EXPORTAR REPORTE (.TXT)", data=reporte_txt, file_name='reporte_blumare.txt', mime='text/plain', use_container_width=True)
     else:
