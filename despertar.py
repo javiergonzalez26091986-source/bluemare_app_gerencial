@@ -1,29 +1,26 @@
-name: Despertador Automático Blumare_gerencial
+import time
+from playwright.sync_api import sync_playwright
 
-on:
-  schedule:
-    # Se ejecuta todos los días a las 10:45 UTC (05:45 AM hora local)
-    - cron: '45 10 * * *'
-  workflow_dispatch:
+def despertar_portal():
+    print("Iniciando navegador virtual en la nube...")
+    with sync_playwright() as p:
+        # Lanzamos un navegador Chromium invisible (headless)
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_workbook() if hasattr(browser, 'new_workbook') else browser.new_page()
+        
+        # URL de tu Portal de Pagos de Señal Más
+        url = "https://bluemareappgerencial-e3kprnbqzsqbebmwpkp9lc.streamlit.app/" 
+        
+        print(f"Visitando el portal: {url}")
+        page.goto(url)
+        
+        # Esperamos 20 segundos para darle tiempo al servidor de Streamlit de despertar por completo
+        print("Esperando a que cargue la interfaz completa...")
+        time.sleep(20)
+        
+        # Tomamos el título de la página para confirmar que cargó con éxito
+        print(f"Portal despierto. Título de la app: '{page.title()}'")
+        browser.close()
 
-jobs:
-  despertar:
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Descargar el código del repositorio
-      uses: actions/checkout@v4
-
-    - name: Configurar Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-
-    - name: Instalar Playwright y dependencias
-      run: |
-        python -m pip install --upgrade pip
-        pip install playwright
-        playwright install chromium --with-deps
-
-    - name: Ejecutar el script despertador
-      run: python despertar.py
+if __name__ == "__main__":
+    despertar_portal()
