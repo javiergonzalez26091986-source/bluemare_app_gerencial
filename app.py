@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import base64
 
@@ -57,9 +57,10 @@ if 'nombres_productos' not in st.session_state: st.session_state.nombres_product
 if 'carrito_ventas' not in st.session_state: st.session_state.carrito_ventas = []
 if 'precios_venta' not in st.session_state: st.session_state.precios_venta = {}
 
-# Estos dos contadores son la magia para limpiar los formularios sin causar errores
+# Estos contadores son la magia para limpiar los formularios sin causar errores
 if 'sale_key' not in st.session_state: st.session_state.sale_key = 0
 if 'item_key' not in st.session_state: st.session_state.item_key = 0
+if 'compra_key' not in st.session_state: st.session_state.compra_key = 0
 
 # ==============================================================================
 # 2. EXTRACTORES CON CACHÉ AMPLIADO (Elimina la lentitud y congelamientos)
@@ -82,13 +83,11 @@ def cargar_precios_nube():
 @st.cache_data(ttl=300)
 def cargar_existencias_nube(sede):
     try:
-        # Petición a la ruta base de inventarios, luego Python se encarga del filtro inteligente
         res = requests.get(URL_API, timeout=10)
         datos = res.json()
         if isinstance(datos, list):
             inventario = [{"Producto": d[0], "Stock": float(d[1]), "Sede": d[2], "Costo": float(d[3]), "ID_Lote": d[4]} for d in datos]
             
-            # Filtro lógico que soluciona la trazabilidad en "Ambas Sedes"
             if sede == "Ambas Sedes":
                 return inventario
             return [item for item in inventario if item['Sede'] == sede]
@@ -115,7 +114,6 @@ def cargar_vehiculos():
         return []
     except: return []
 
-# Descarga inicial de catálogos maestros
 st.session_state.nombres_productos = cargar_catalogo_nube()
 st.session_state.precios_venta = cargar_precios_nube()
 
@@ -157,14 +155,19 @@ with tab1:
     col_izq, col_der = st.columns([1, 1])
     with col_izq:
         st.subheader("DATOS DE ENTRADA")
-        sede_ent = st.radio("Sede:", ["Cali", "Buenaventura"], horizontal=True)
-        fecha_ent = st.text_input("Fecha (AAAAMMDD):", value=datetime.now().strftime("%Y%m%d"))
-        prod_ent = st.selectbox("Producto:", ["Seleccione un producto"] + st.session_state.nombres_productos)
+        
+        # Ajuste de zona horaria para Colombia (UTC-5)
+        fecha_actual_col = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y%m%d")
+        
+        # Se añaden las llaves dinámicas a los campos de entrada
+        sede_ent = st.radio("Sede:", ["Cali", "Buenaventura"], horizontal=True, key=f"sede_ent_{st.session_state.compra_key}")
+        fecha_ent = st.text_input("Fecha (AAAAMMDD):", value=fecha_actual_col, key=f"fecha_ent_{st.session_state.compra_key}")
+        prod_ent = st.selectbox("Producto:", ["Seleccione un producto"] + st.session_state.nombres_productos, key=f"prod_ent_{st.session_state.compra_key}")
         
         col_lbs, col_precio = st.columns(2)
-        lbs_ent = col_lbs.number_input("Libras (LBS):", min_value=0.0, value=0.0, step=10.0)
-        precio_lb_ent = col_precio.number_input("Precio Unitario:", min_value=0.0, value=0.0, step=1.0)
-        trm_ent = st.number_input("TRM (Tasa de Cambio - Si aplica):", min_value=0.0, value=0.0, step=50.0)
+        lbs_ent = col_lbs.number_input("Libras (LBS):", min_value=0.0, value=0.0, step=10.0, key=f"lbs_{st.session_state.compra_key}")
+        precio_lb_ent = col_precio.number_input("Precio Unitario:", min_value=0.0, value=0.0, step=1.0, key=f"precio_{st.session_state.compra_key}")
+        trm_ent = st.number_input("TRM (Tasa de Cambio - Si aplica):", min_value=0.0, value=0.0, step=50.0, key=f"trm_{st.session_state.compra_key}")
 
     es_fresco = "FRESCO" in prod_ent.upper()
     es_plaqueta = "PLAQUETA" in prod_ent.upper()
@@ -212,8 +215,11 @@ with tab1:
         if prod_ent == "Seleccione un producto" or lbs_ent <= 0:
             st.warning("Completa el producto y las libras antes de registrar.")
         else:
+            # Sincronizamos el timestamp (ID Venta) con la misma zona horaria
+            ts_actual = int((datetime.utcnow() - timedelta(hours=5)).timestamp())
+            
             datos_compra = {
-                "tipo_operacion": "RegistrarCompra", "id_venta": f"CMP-{int(datetime.now().timestamp())}",
+                "tipo_operacion": "RegistrarCompra", "id_venta": f"CMP-{ts_actual}",
                 "fecha_hora": fecha_ent, "sede_despacho": sede_ent, "cliente": "PROVEEDOR",
                 "producto": prod_ent, "libras": lbs_ent, "precio_materia_prima": precio_lb_ent,
                 "descongelacion": p_desc, "pelado_desvenado": p_pyd, "hidratacion": p_hid,
@@ -226,7 +232,10 @@ with tab1:
                 res = requests.post(URL_API, json=datos_compra)
                 if res.status_code == 200:
                     st.success("¡Registro Completo! Sábana mapeada en Historico_Compras.")
+                    # Magia Pura: Incrementar el contador vacía el formulario automáticamente
+                    st.session_state.compra_key += 1
                     st.cache_data.clear()
+                    st.rerun()
                 else:
                     st.error("Error al registrar en la base de datos.")
 
@@ -238,7 +247,6 @@ with tab2:
     
     col_sede, col_prod = st.columns(2)
     with col_sede:
-        # Se mantienen las tres opciones de sedes
         sede_inv = st.radio("Sede a consultar:", ["Ambas Sedes", "Cali", "Buenaventura"], horizontal=True, key="sede_inv_radio")
     
     inventario_actual = cargar_existencias_nube(sede_inv)
@@ -250,7 +258,6 @@ with tab2:
             opciones_producto = ["Ver todos los lotes"] + sorted(list(df_inv['Producto'].unique()))
             prod_seleccionado = st.selectbox("Trazabilidad por Producto:", opciones_producto)
         
-        # Filtramos por producto si aplica, sino mostramos todo el dataframe original sin agrupar
         df_mostrar = df_inv if prod_seleccionado == "Ver todos los lotes" else df_inv[df_inv['Producto'] == prod_seleccionado]
         
         kpi1, kpi2 = st.columns(2)
@@ -262,7 +269,6 @@ with tab2:
         else:
             st.markdown(f"##### 🔍 Trazabilidad Completa: {prod_seleccionado}")
             
-        # Reorganizamos las columnas para que ID Lote, Producto, Sede, Stock y Costo sean SIEMPRE visibles en cualquier modo.
         columnas_visibles = ['ID_Lote', 'Producto', 'Sede', 'Stock', 'Costo']
         st.dataframe(df_mostrar[columnas_visibles], use_container_width=True, hide_index=True)
             
@@ -284,7 +290,6 @@ with tab3:
         placas_disponibles = cargar_vehiculos()
         placa_vta = st.selectbox("Placa del Vehículo (Despacho):", ["Seleccione un vehículo"] + placas_disponibles, key=f"placa_{st.session_state.sale_key}")
         
-        # Llamado independiente a inventario. Funciona perfecto con el filtro nativo.
         inv_sede = cargar_existencias_nube(sede_vta)
         productos_disp = list(set([item['Producto'] for item in inv_sede if item['Stock'] > 0]))
         
@@ -303,7 +308,6 @@ with tab3:
         
         cant_vta = st.number_input("Cantidad a vender (KGS):", min_value=0.0, step=1.0, key=f"cant_{st.session_state.item_key}")
         
-        # El precio de venta mantiene dependencia dual para actualizarse al cambiar el producto y al resetear el ítem
         precio_vta = st.number_input("Precio Venta (COP):", min_value=0.0, value=precio_sugerido, step=1000.0, key=f"precio_{st.session_state.item_key}_{prod_vta}")
         
         if lote_obj:
@@ -319,7 +323,6 @@ with tab3:
                         "precio": precio_vta, "total": subt, "utilidad": util, "sede": sede_vta,
                         "placa": placa_vta 
                     })
-                    # Magia Pura: Incrementar item_key borra Producto, Lote y Cantidad, ¡pero deja el Cliente intacto!
                     st.session_state.item_key += 1
                     st.rerun()
                 else:
@@ -358,7 +361,6 @@ with tab3:
                         if res.status_code == 200:
                             st.success("¡Venta procesada exitosamente!")
                             st.session_state.carrito_ventas = []
-                            # Magia Pura: Incrementar ambos contadores vacía absolutamente toda la interfaz.
                             st.session_state.sale_key += 1
                             st.session_state.item_key += 1
                             st.cache_data.clear()
