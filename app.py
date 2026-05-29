@@ -82,10 +82,13 @@ def cargar_precios_nube():
 @st.cache_data(ttl=300)
 def cargar_existencias_nube(sede):
     try:
-        res = requests.get(f"{URL_API}?sede={sede}", timeout=10)
+        # Se elimina el parámetro ?sede de la URL y se filtra localmente con Python
+        res = requests.get(URL_API, timeout=10)
         datos = res.json()
         if isinstance(datos, list):
-            return [{"Producto": d[0], "Stock": float(d[1]), "Sede": d[2], "Costo": float(d[3]), "ID_Lote": d[4]} for d in datos]
+            inventario = [{"Producto": d[0], "Stock": float(d[1]), "Sede": d[2], "Costo": float(d[3]), "ID_Lote": d[4]} for d in datos]
+            # Filtro estricto que soluciona la mezcla de inventarios
+            return [item for item in inventario if item['Sede'] == sede]
         return []
     except: return []
 
@@ -225,18 +228,33 @@ with tab1:
                     st.error("Error al registrar en la base de datos.")
 
 # ------------------------------------------------------------------------------
-# MÓDULO 2: INVENTARIO POR LOTES
+# MÓDULO 2: INVENTARIO POR LOTES (Trazabilidad y Filtros)
 # ------------------------------------------------------------------------------
 with tab2:
     st.subheader("CONTROL DE EXISTENCIAS POR LOTE")
-    sede_inv = st.radio("Sede a consultar:", ["Cali", "Buenaventura"], horizontal=True, key="sede_inv_radio")
+    
+    col_sede, col_prod = st.columns(2)
+    with col_sede:
+        sede_inv = st.radio("Sede a consultar:", ["Cali", "Buenaventura"], horizontal=True, key="sede_inv_radio")
+    
     inventario_actual = cargar_existencias_nube(sede_inv)
     
     if inventario_actual:
         df_inv = pd.DataFrame(inventario_actual)
+        
+        with col_prod:
+            # Reincorporación del filtro de trazabilidad de producto
+            opciones_producto = ["Todos los productos"] + sorted(list(df_inv['Producto'].unique()))
+            prod_seleccionado = st.selectbox("Trazabilidad por Producto:", opciones_producto)
+        
+        # Aplicación del filtro de trazabilidad
+        if prod_seleccionado != "Todos los productos":
+            df_inv = df_inv[df_inv['Producto'] == prod_seleccionado]
+            
         kpi1, kpi2 = st.columns(2)
         kpi1.metric("Stock Total", f"{df_inv['Stock'].sum():,.2f} KGS")
         kpi2.metric("Capital en Bodega", f"$ {(df_inv['Stock'] * df_inv['Costo']).sum():,.0f} COP")
+        
         st.dataframe(df_inv, use_container_width=True, hide_index=True)
     else:
         st.info("No hay inventario disponible en esta sede.")
