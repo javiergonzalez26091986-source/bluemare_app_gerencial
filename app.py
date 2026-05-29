@@ -231,14 +231,14 @@ with tab1:
                     st.error("Error al registrar en la base de datos.")
 
 # ------------------------------------------------------------------------------
-# MÓDULO 2: INVENTARIO POR LOTES (Trazabilidad y Agrupaciones Dinámicas)
+# MÓDULO 2: INVENTARIO POR LOTES (Trazabilidad y Filtros)
 # ------------------------------------------------------------------------------
 with tab2:
     st.subheader("CONTROL DE EXISTENCIAS POR LOTE")
     
     col_sede, col_prod = st.columns(2)
     with col_sede:
-        # Opciones completas incluyendo Ambas Sedes
+        # Se mantienen las tres opciones de sedes
         sede_inv = st.radio("Sede a consultar:", ["Ambas Sedes", "Cali", "Buenaventura"], horizontal=True, key="sede_inv_radio")
     
     inventario_actual = cargar_existencias_nube(sede_inv)
@@ -247,27 +247,24 @@ with tab2:
         df_inv = pd.DataFrame(inventario_actual)
         
         with col_prod:
-            # Selector inteligente de trazabilidad
-            opciones_producto = ["Ver resumen general"] + sorted(list(df_inv['Producto'].unique()))
+            opciones_producto = ["Ver todos los lotes"] + sorted(list(df_inv['Producto'].unique()))
             prod_seleccionado = st.selectbox("Trazabilidad por Producto:", opciones_producto)
         
-        # Mantenimiento de las métricas gerenciales (Cálculos directos a partir del dataframe)
-        df_mostrar = df_inv if prod_seleccionado == "Ver resumen general" else df_inv[df_inv['Producto'] == prod_seleccionado]
+        # Filtramos por producto si aplica, sino mostramos todo el dataframe original sin agrupar
+        df_mostrar = df_inv if prod_seleccionado == "Ver todos los lotes" else df_inv[df_inv['Producto'] == prod_seleccionado]
         
         kpi1, kpi2 = st.columns(2)
         kpi1.metric("Stock Total", f"{df_mostrar['Stock'].sum():,.2f} KGS")
         kpi2.metric("Capital en Bodega", f"$ {(df_mostrar['Stock'] * df_mostrar['Costo']).sum():,.0f} COP")
         
-        # Control de despliegue entre agrupación general y trazabilidad de lote individual
-        if prod_seleccionado == "Ver resumen general":
-            st.markdown("##### 📦 Resumen General de Inventario")
-            # Agrupa por producto para simular la consolidación nativa
-            df_resumen = df_inv.groupby('Producto', as_index=False).agg({'Stock': 'sum'})
-            st.dataframe(df_resumen, use_container_width=True, hide_index=True)
+        if prod_seleccionado == "Ver todos los lotes":
+            st.markdown("##### 📦 Inventario Detallado (Todos los Lotes)")
         else:
-            st.markdown(f"##### 🔍 Trazabilidad de Lotes: {prod_seleccionado}")
-            # Muestra las columnas esenciales de trazabilidad para auditar cada lote
-            st.dataframe(df_mostrar[['ID_Lote', 'Sede', 'Stock', 'Costo']], use_container_width=True, hide_index=True)
+            st.markdown(f"##### 🔍 Trazabilidad Completa: {prod_seleccionado}")
+            
+        # Reorganizamos las columnas para que ID Lote, Producto, Sede, Stock y Costo sean SIEMPRE visibles en cualquier modo.
+        columnas_visibles = ['ID_Lote', 'Producto', 'Sede', 'Stock', 'Costo']
+        st.dataframe(df_mostrar[columnas_visibles], use_container_width=True, hide_index=True)
             
     else:
         st.info("No hay inventario disponible en esta sede.")
