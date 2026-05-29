@@ -86,7 +86,18 @@ def cargar_existencias_nube(sede):
         res = requests.get(URL_API, timeout=10)
         datos = res.json()
         if isinstance(datos, list):
-            inventario = [{"Producto": d[0], "Stock": float(d[1]), "Sede": d[2], "Costo": float(d[3]), "ID_Lote": d[4]} for d in datos]
+            inventario = []
+            for d in datos:
+                # Si el AppScript ya manda el stock inicial (índice 5), lo usamos. Si no, tomamos el actual.
+                stock_inicial = float(d[5]) if len(d) > 5 else float(d[1])
+                inventario.append({
+                    "Producto": d[0], 
+                    "Stock": float(d[1]), # Clave intacta para no romper el módulo de ventas
+                    "Sede": d[2], 
+                    "Costo": float(d[3]), 
+                    "ID_Lote": d[4],
+                    "Stock_Inicial": stock_inicial
+                })
             
             if sede == "Ambas Sedes":
                 return inventario
@@ -254,6 +265,9 @@ with tab2:
     if inventario_actual:
         df_inv = pd.DataFrame(inventario_actual)
         
+        # Renombrar columnas para una visualización más clara al usuario
+        df_inv = df_inv.rename(columns={"Stock_Inicial": "Comprado (KGS)", "Stock": "Disponible (KGS)"})
+        
         with col_prod:
             opciones_producto = ["Ver todos los lotes"] + sorted(list(df_inv['Producto'].unique()))
             prod_seleccionado = st.selectbox("Trazabilidad por Producto:", opciones_producto)
@@ -261,15 +275,15 @@ with tab2:
         df_mostrar = df_inv if prod_seleccionado == "Ver todos los lotes" else df_inv[df_inv['Producto'] == prod_seleccionado]
         
         kpi1, kpi2 = st.columns(2)
-        kpi1.metric("Stock Total", f"{df_mostrar['Stock'].sum():,.2f} KGS")
-        kpi2.metric("Capital en Bodega", f"$ {(df_mostrar['Stock'] * df_mostrar['Costo']).sum():,.0f} COP")
+        kpi1.metric("Stock Disponible", f"{df_mostrar['Disponible (KGS)'].sum():,.2f} KGS")
+        kpi2.metric("Capital en Bodega", f"$ {(df_mostrar['Disponible (KGS)'] * df_mostrar['Costo']).sum():,.0f} COP")
         
         if prod_seleccionado == "Ver todos los lotes":
             st.markdown("##### 📦 Inventario Detallado (Todos los Lotes)")
         else:
             st.markdown(f"##### 🔍 Trazabilidad Completa: {prod_seleccionado}")
             
-        columnas_visibles = ['ID_Lote', 'Producto', 'Sede', 'Stock', 'Costo']
+        columnas_visibles = ['ID_Lote', 'Producto', 'Sede', 'Comprado (KGS)', 'Disponible (KGS)', 'Costo']
         st.dataframe(df_mostrar[columnas_visibles], use_container_width=True, hide_index=True)
             
     else:
