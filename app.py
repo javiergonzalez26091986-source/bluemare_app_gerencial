@@ -6,7 +6,7 @@ import os
 import base64
 
 # ==============================================================================
-# 1. CONFIGURACIÓN DE LA PÁGINA Y PANEL DE ESTILOS CSS SAAS PREMIUM
+# 1. CONFIGURACIÓN DE LA PÁGINA Y PANEL DE ESTILOS CSS
 # ==============================================================================
 icono_pestana = "logoBlumare.ico" if os.path.exists("logoBlumare.ico") else "logoBlumare.jpeg"
 st.set_page_config(page_title="Blumare - SGE", page_icon=icono_pestana, layout="wide")
