@@ -57,13 +57,12 @@ if 'nombres_productos' not in st.session_state: st.session_state.nombres_product
 if 'carrito_ventas' not in st.session_state: st.session_state.carrito_ventas = []
 if 'precios_venta' not in st.session_state: st.session_state.precios_venta = {}
 
-# Estos contadores son la magia para limpiar los formularios sin causar errores
 if 'sale_key' not in st.session_state: st.session_state.sale_key = 0
 if 'item_key' not in st.session_state: st.session_state.item_key = 0
 if 'compra_key' not in st.session_state: st.session_state.compra_key = 0
 
 # ==============================================================================
-# 2. EXTRACTORES CON CACHÉ AMPLIADO (Elimina la lentitud y congelamientos)
+# 2. EXTRACTORES CON CACHÉ AMPLIADO
 # ==============================================================================
 @st.cache_data(ttl=300)
 def cargar_catalogo_nube():
@@ -88,17 +87,15 @@ def cargar_existencias_nube(sede):
         if isinstance(datos, list):
             inventario = []
             for d in datos:
-                # Si el AppScript ya manda el stock inicial (índice 5), lo usamos. Si no, tomamos el actual.
                 stock_inicial = float(d[5]) if len(d) > 5 else float(d[1])
                 inventario.append({
                     "Producto": d[0], 
-                    "Stock": float(d[1]), # Clave intacta para no romper el módulo de ventas
+                    "Stock": float(d[1]), 
                     "Sede": d[2], 
                     "Costo": float(d[3]), 
                     "ID_Lote": d[4],
                     "Stock_Inicial": stock_inicial
                 })
-            
             if sede == "Ambas Sedes":
                 return inventario
             return [item for item in inventario if item['Sede'] == sede]
@@ -129,7 +126,7 @@ st.session_state.nombres_productos = cargar_catalogo_nube()
 st.session_state.precios_venta = cargar_precios_nube()
 
 # ==============================================================================
-# 3. CONSTRUCCIÓN DE INTERFAZ Y ENCABEZADO CON LOGO CORPORATIVO
+# 3. CONSTRUCCIÓN DE INTERFAZ Y ENCABEZADO
 # ==============================================================================
 nombre_logo = "logoBlumare.jpeg"
 if os.path.exists(nombre_logo):
@@ -160,82 +157,141 @@ st.markdown("<hr style='border-color: #334155; margin-top: 10px; margin-bottom: 
 tab1, tab2, tab3, tab4 = st.tabs(["📥 Entrada de Mercancía", "📦 Inventario", "🛒 Punto de Venta", "📊 Análisis de Utilidades"])
 
 # ------------------------------------------------------------------------------
-# MÓDULO 1: ENTRADA DE MERCANCÍA (Mermas y Planta)
+# MÓDULO 1: ENTRADA DE MERCANCÍA (Dinámico por Sede)
 # ------------------------------------------------------------------------------
 with tab1:
     col_izq, col_der = st.columns([1, 1])
+    
+    # Inicialización de variables para el payload
+    kgs = 0
+    total_lote = 0
+    u_kg = 0
+    c_mp_cop = 0
+    c_proceso = 0
+    c_logistica = 0
+    c_mp_usd = 0
+    p_desc = p_pyd = p_hid = p_sec = p_gla = 0
+    kgs_para_inventario = 0
+    payload_lbs = 0
+    payload_precio_lb = 0
+    payload_trm = 0
+
     with col_izq:
         st.subheader("DATOS DE ENTRADA")
-        
-        # Ajuste de zona horaria para Colombia (UTC-5)
         fecha_actual_col = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y%m%d")
         
-        # Se añaden las llaves dinámicas a los campos de entrada
         sede_ent = st.radio("Sede:", ["Cali", "Buenaventura"], horizontal=True, key=f"sede_ent_{st.session_state.compra_key}")
         fecha_ent = st.text_input("Fecha (AAAAMMDD):", value=fecha_actual_col, key=f"fecha_ent_{st.session_state.compra_key}")
         prod_ent = st.selectbox("Producto:", ["Seleccione un producto"] + st.session_state.nombres_productos, key=f"prod_ent_{st.session_state.compra_key}")
         
-        col_lbs, col_precio = st.columns(2)
-        lbs_ent = col_lbs.number_input("Libras (LBS):", min_value=0.0, value=0.0, step=10.0, key=f"lbs_{st.session_state.compra_key}")
-        precio_lb_ent = col_precio.number_input("Precio Unitario:", min_value=0.0, value=0.0, step=1.0, key=f"precio_{st.session_state.compra_key}")
-        trm_ent = st.number_input("TRM (Tasa de Cambio - Si aplica):", min_value=0.0, value=0.0, step=50.0, key=f"trm_{st.session_state.compra_key}")
+        producto_final = prod_ent # Por defecto, entra con el mismo nombre
 
-    es_fresco = "FRESCO" in prod_ent.upper()
-    es_plaqueta = "PLAQUETA" in prod_ent.upper()
-    kgs = lbs_ent / 2.2 if lbs_ent > 0 else 0
-    c_proceso, c_logistica, peso_final, c_mp_cop, c_mp_usd = 0, 0, 0, 0, 0
-    p_desc, p_pyd, p_hid, p_sec, p_gla = 0, 0, 0, 0, 0
+        # La interfaz cambia dependiendo de la sede seleccionada
+        if sede_ent == "Cali":
+            col_lbs, col_precio = st.columns(2)
+            lbs_ent = col_lbs.number_input("Libras (LBS):", min_value=0.0, value=0.0, step=10.0, key=f"lbs_{st.session_state.compra_key}")
+            precio_lb_ent = col_precio.number_input("Precio Unitario:", min_value=0.0, value=0.0, step=1.0, key=f"precio_{st.session_state.compra_key}")
+            trm_ent = st.number_input("TRM (Tasa de Cambio - Si aplica):", min_value=0.0, value=0.0, step=50.0, key=f"trm_{st.session_state.compra_key}")
+        else:
+            col_kgs, col_precio = st.columns(2)
+            kgs_ent = col_kgs.number_input("Kilos Comprados (KGS):", min_value=0.0, value=0.0, step=10.0, key=f"kgs_{st.session_state.compra_key}")
+            precio_kg_ent = col_precio.number_input("Precio por Kilo (COP):", min_value=0.0, value=0.0, step=1000.0, key=f"precio_kg_{st.session_state.compra_key}")
 
     if prod_ent != "Seleccione un producto":
-        if es_plaqueta:
-            p_desc = kgs * 0.97; p_pyd = p_desc * 0.82; p_hid = p_pyd * 1.25
-            c_proceso = round(p_hid * 4500, 0); peso_final = p_hid
-            c_logistica = round(kgs * 2200, 0)
-        elif es_fresco:
-            p_pyd = kgs * 0.82; p_hid = p_pyd * 1.26; p_sec = p_hid * 0.97; p_gla = p_sec / 0.7
-            c_proceso = round(p_gla * 6500, 0); peso_final = p_gla
-        else:
-            p_desc = kgs * 0.97; p_pyd = p_desc * 0.82; p_hid = p_pyd * 1.26; p_sec = p_hid * 0.97; p_gla = p_sec / 0.7
-            c_proceso = round(p_gla * 6500, 0); peso_final = p_gla
-            c_logistica = round(kgs * 2200, 0)
+        if sede_ent == "Cali":
+            es_fresco = "FRESCO" in prod_ent.upper()
+            es_plaqueta = "PLAQUETA" in prod_ent.upper()
+            kgs = lbs_ent / 2.2 if lbs_ent > 0 else 0
+            kgs_para_inventario = kgs # Cali guarda KGS originales comprados
             
-        c_mp_usd = lbs_ent * precio_lb_ent
-        c_mp_cop = kgs * precio_lb_ent if es_fresco else round(c_mp_usd * trm_ent, 0)
-    
-    total_lote = c_mp_cop + c_logistica + c_proceso
-    u_kg = total_lote / peso_final if peso_final > 0 else 0
+            payload_lbs = lbs_ent
+            payload_precio_lb = precio_lb_ent
+            payload_trm = trm_ent
 
-    with col_der:
-        st.subheader("PROCESO DE PLANTA (KGS)")
-        st.info(f"Rendimiento calculado para: **{prod_ent}**")
-        c1, c2 = st.columns(2)
-        c1.metric("1. Descongelación", f"{p_desc:,.2f} KGS")
-        c2.metric("2. Pelado/Desvenado", f"{p_pyd:,.2f} KGS")
-        c1.metric("3. Hidratación", f"{p_hid:,.2f} KGS")
-        c2.metric("4. Secado", f"{p_sec:,.2f} KGS")
-        c1.metric("5. Glaseo", f"{p_gla:,.2f} KGS")
+            if es_plaqueta:
+                p_desc = kgs * 0.97; p_pyd = p_desc * 0.82; p_hid = p_pyd * 1.25
+                c_proceso = round(p_hid * 4500, 0); peso_final = p_hid
+                c_logistica = round(kgs * 2200, 0)
+            elif es_fresco:
+                p_pyd = kgs * 0.82; p_hid = p_pyd * 1.26; p_sec = p_hid * 0.97; p_gla = p_sec / 0.7
+                c_proceso = round(p_gla * 6500, 0); peso_final = p_gla
+            else:
+                p_desc = kgs * 0.97; p_pyd = p_desc * 0.82; p_hid = p_pyd * 1.26; p_sec = p_hid * 0.97; p_gla = p_sec / 0.7
+                c_proceso = round(p_gla * 6500, 0); peso_final = p_gla
+                c_logistica = round(kgs * 2200, 0)
+                
+            c_mp_usd = lbs_ent * precio_lb_ent
+            c_mp_cop = kgs * precio_lb_ent if es_fresco else round(c_mp_usd * trm_ent, 0)
+            total_lote = c_mp_cop + c_logistica + c_proceso
+            u_kg = total_lote / peso_final if peso_final > 0 else 0
+
+            with col_der:
+                st.subheader("PROCESO DE PLANTA (KGS)")
+                st.info(f"Rendimiento calculado para: **{prod_ent}**")
+                c1, c2 = st.columns(2)
+                c1.metric("1. Descongelación", f"{p_desc:,.2f} KGS")
+                c2.metric("2. Pelado/Desvenado", f"{p_pyd:,.2f} KGS")
+                c1.metric("3. Hidratación", f"{p_hid:,.2f} KGS")
+                c2.metric("4. Secado", f"{p_sec:,.2f} KGS")
+                c1.metric("5. Glaseo", f"{p_gla:,.2f} KGS")
+
+        elif sede_ent == "Buenaventura":
+            kgs = kgs_ent
+            payload_lbs = kgs * 2.2
+            payload_precio_lb = precio_kg_ent / 2.2 if kgs > 0 else 0
+            payload_trm = 1
+            
+            c_mp_usd = 0
+            c_mp_cop = kgs * precio_kg_ent
+            
+            with col_der:
+                st.subheader("PROCESO DE FILETEADO")
+                st.info(f"Rendimiento calculado para: **{prod_ent}**")
+                se_filetea = st.toggle("¿Este producto se va a filetear?", value=False, key=f"filetear_{st.session_state.compra_key}")
+                
+                if se_filetea:
+                    col_p, col_h = st.columns(2)
+                    porc_piel = col_p.number_input("% Merma Piel:", min_value=0.0, max_value=100.0, value=10.0, step=1.0, key=f"piel_{st.session_state.compra_key}")
+                    porc_hueso = col_h.number_input("% Merma Hueso:", min_value=0.0, max_value=100.0, value=40.0, step=1.0, key=f"hueso_{st.session_state.compra_key}")
+                    
+                    kilos_piel = kgs * (porc_piel / 100)
+                    kilos_hueso = kgs * (porc_hueso / 100)
+                    peso_final = kgs - kilos_piel - kilos_hueso
+                    
+                    st.caption(f"📉 Pérdida física estimada: Piel ({kilos_piel:.2f} kg) | Hueso ({kilos_hueso:.2f} kg)")
+                    producto_final = st.text_input("Ingresar al inventario como:", value=f"FILETE DE {prod_ent}", key=f"nombre_inv_{st.session_state.compra_key}")
+                else:
+                    peso_final = kgs
+                    producto_final = st.text_input("Ingresar al inventario como:", value=prod_ent, key=f"nombre_inv_{st.session_state.compra_key}")
+                
+                kgs_para_inventario = peso_final # Buenaventura guarda el Filete Neto
+                total_lote = c_mp_cop
+                u_kg = total_lote / peso_final if peso_final > 0 else 0
+                
+                c1, c2 = st.columns(2)
+                c1.metric("Kilos Iniciales", f"{kgs:,.2f} KGS")
+                c2.metric("Filete Neto (KGS)", f"{peso_final:,.2f} KGS")
 
     st.markdown("### RESUMEN DE COSTOS")
     rc1, rc2, rc3, rc4 = st.columns(4)
-    rc1.metric("Peso Base KGS", f"{kgs:,.2f}")
+    rc1.metric("Peso Base Comprado", f"{kgs:,.2f} KGS")
     rc2.metric("Costo Materia Prima", f"$ {c_mp_cop:,.0f} COP")
     rc3.metric("Costo Proceso + Logística", f"$ {c_proceso + c_logistica:,.0f} COP")
     rc4.metric("Costo TOTAL Lote", f"$ {total_lote:,.0f} COP", f"$ {u_kg:,.2f} / KG")
 
     if st.button("🚀 REGISTRAR ENTRADA EN BODEGA", type="primary", use_container_width=True):
-        if prod_ent == "Seleccione un producto" or lbs_ent <= 0:
-            st.warning("Completa el producto y las libras antes de registrar.")
+        if prod_ent == "Seleccione un producto" or kgs <= 0:
+            st.warning("Completa el producto y las cantidades antes de registrar.")
         else:
-            # Sincronizamos el timestamp (ID Venta) con la misma zona horaria
             ts_actual = int((datetime.utcnow() - timedelta(hours=5)).timestamp())
             
             datos_compra = {
                 "tipo_operacion": "RegistrarCompra", "id_venta": f"CMP-{ts_actual}",
                 "fecha_hora": fecha_ent, "sede_despacho": sede_ent, "cliente": "PROVEEDOR",
-                "producto": prod_ent, "libras": lbs_ent, "precio_materia_prima": precio_lb_ent,
+                "producto": producto_final, "libras": payload_lbs, "precio_materia_prima": payload_precio_lb,
                 "descongelacion": p_desc, "pelado_desvenado": p_pyd, "hidratacion": p_hid,
-                "secado": p_sec, "glaseo": p_gla, "id_lote_origen": f"{fecha_ent}_{prod_ent}",
-                "cantidad_kgs": kgs, "materia_prima_usd": c_mp_usd, "trm": trm_ent,
+                "secado": p_sec, "glaseo": p_gla, "id_lote_origen": f"{fecha_ent}_{producto_final}",
+                "cantidad_kgs": kgs_para_inventario, "materia_prima_usd": c_mp_usd, "trm": payload_trm,
                 "materia_prima_cop": c_mp_cop, "logistica_envio": c_logistica, "costo_proceso_final": c_proceso,
                 "ingreso_total_cop": total_lote, "precio_venta_cop": u_kg
             }
@@ -243,7 +299,6 @@ with tab1:
                 res = requests.post(URL_API, json=datos_compra)
                 if res.status_code == 200:
                     st.success("¡Registro Completo! Sábana mapeada en Historico_Compras.")
-                    # Magia Pura: Incrementar el contador vacía el formulario automáticamente
                     st.session_state.compra_key += 1
                     st.cache_data.clear()
                     st.rerun()
@@ -264,8 +319,6 @@ with tab2:
     
     if inventario_actual:
         df_inv = pd.DataFrame(inventario_actual)
-        
-        # Renombrar columnas para una visualización más clara al usuario
         df_inv = df_inv.rename(columns={"Stock_Inicial": "Comprado (KGS)", "Stock": "Disponible (KGS)"})
         
         with col_prod:
@@ -299,7 +352,6 @@ with tab3:
         st.subheader("REGISTRO DE VENTA")
         sede_vta = st.selectbox("Sede de Despacho:", ["Cali", "Buenaventura"], key="vta_sede")
         
-        # 1. Campos de Cabecera (Dependen de sale_key)
         cliente_vta = st.text_input("Cliente:", key=f"cliente_{st.session_state.sale_key}")
         placas_disponibles = cargar_vehiculos()
         placa_vta = st.selectbox("Placa del Vehículo (Despacho):", ["Seleccione un vehículo"] + placas_disponibles, key=f"placa_{st.session_state.sale_key}")
@@ -307,7 +359,6 @@ with tab3:
         inv_sede = cargar_existencias_nube(sede_vta)
         productos_disp = list(set([item['Producto'] for item in inv_sede if item['Stock'] > 0]))
         
-        # 2. Campos de Ítem (Dependen de item_key)
         prod_vta = st.selectbox("Producto:", ["Seleccione un producto"] + productos_disp, key=f"prod_{st.session_state.item_key}")
         
         lotes_disp = [item for item in inv_sede if item['Producto'] == prod_vta and item['Stock'] > 0]
@@ -321,7 +372,6 @@ with tab3:
             st.caption(f"🔵 Stock disponible: {lote_obj['Stock']:,.2f} KGS | Costo interno: $ {lote_obj['Costo']:,.0f}")
         
         cant_vta = st.number_input("Cantidad a vender (KGS):", min_value=0.0, step=1.0, key=f"cant_{st.session_state.item_key}")
-        
         precio_vta = st.number_input("Precio Venta (COP):", min_value=0.0, value=precio_sugerido, step=1000.0, key=f"precio_{st.session_state.item_key}_{prod_vta}")
         
         if lote_obj:
